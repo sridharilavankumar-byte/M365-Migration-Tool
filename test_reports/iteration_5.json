@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration-5 (secret encryption at rest with cryptography.Fernet + 'enc:v1:' prefix) backend testing complete. Added /app/backend/tests/test_iteration5.py with 15 pytest cases covering: (1) POST /api/tenant-connections encrypts client_secret in Mongo (raw doc starts with 'enc:v1:'), masks response, reveal=true returns original plaintext ('plaintext-value-abc' round-trip verified); (2) PUT with empty client_secret keeps the exact same encrypted blob in Mongo (byte-for-byte identical) and reveal still returns original plaintext; (3) PUT with a new client_secret writes a DIFFERENT enc:v1: token and reveal returns the new value; (4) POST /tenant-connections/{id}/test decrypts secret before MSAL, returns ok=false with authority-config error, mode='live', no 500; (5) POST /api/projects encrypts BOTH source_tenant.client_secret and destination_tenant.client_secret in the raw Mongo doc; (6) GET /api/projects and GET /api/projects/{id} never include client_secret — each tenant object exposes has_secret bool (verified both in list and detail); (7) simulated-mode project (empty creds) discover returns mode='simulated' & 64 exchange items, test-connection returns simulated ok:true for both sides, preflight runs without crash, job with 3 items runs to completion with success_count>0; (8) backward compat: unit-level crypto.decrypt_secret returns legacy plaintext unchanged AND encrypt→decrypt round-trip yields original; a directly-inserted legacy Mongo doc with plaintext client_secret is served correctly by project GET (masked, has_secret=true) and test-connection responds 200. Regression: full suite is 86/86 (updated one iter4 assertion that expected pre-encryption behavior — project response leaking client_secret — to match new iter5 contract of has_secret:true). No backend 5xx caused by encryption path.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/services/{service_type}/discover",
+        "issue": "PRE-EXISTING (not iter5-caused): when a project has 'live-looking' but invalid tenant creds (e.g. fake tenant_id GUID), _discover propagates the MSAL ValueError as HTTP 500 instead of catching it like graph_adapter.test_connection does. Repro: create a project with fake tenant_id/client_id/client_secret, call discover — 500 with 'Unable to get authority configuration' in server logs. Suggest wrapping _discover's live branch in try/except and either falling back to simulated or surfacing a structured 4xx/200 with mode='live' + error. Affects any legacy plaintext record with fake creds too."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter5_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional/minor) Wrap _discover live branch in try/except to convert MSAL ValueError into a structured response instead of 500. Not iter5-specific — pre-existing since live-graph discovery was introduced.",
+    "(Optional) Consider adding an audit_log entry when the /projects endpoint would previously have leaked client_secret, symmetric to the existing connection.reveal audit log."
+  ],
+  "critical_code_review_comments": [
+    "crypto.py:47-52 — if CONN_ENCRYPTION_KEY is not set, encrypt_secret silently falls back to storing PLAINTEXT (only a WARNING log). In a production dev-fallback that's fine, but consider making this a hard error in a 'production' mode env flag (e.g. FAIL_IF_NO_ENC_KEY=true), otherwise a misconfigured deployment will silently store secrets in cleartext with no visible signal in API responses.",
+    "server.py:876-890 (_connection_out) — reveal=true returns the plaintext but the audit_log write (added in iter5, l.919-927) only fires from the get_tenant_connection endpoint. If any future code path calls _connection_out(doc, reveal=True) directly, it will bypass the audit trail. Recommend moving the audit_log insert INTO _connection_out (or a wrapper) so it's guaranteed on every reveal.",
+    "server.py:405-418 (_discover) — MSAL ValueError on live branch is not caught. See minor backend issue above. This surfaces as an HTTP 500 to the UI. Since decrypt_secret is called BEFORE the ValueError, the encryption path itself is safe, but user experience is poor. Suggested fix: wrap the DISCOVERY_MAP call in try/except and, on adapter/MSAL error, either return simulated items with a warning field, or return HTTP 200 with mode='live_error' + empty items + error message.",
+    "server.py:270-281 (_project_out) — has_secret is computed from stored value truthiness. If a legacy doc stores an empty string (\"\"), has_secret=false; if it stores plaintext (any non-empty), has_secret=true. This works but consider also treating a value that CAN'T be decrypted as has_secret=false so a broken/corrupted enc token doesn't lie to the UI. Minor.",
+    "crypto.py:74-76 (is_encrypted) — trivial helper is fine; consider also exposing a `looks_valid` check that attempts decrypt but returns bool so callers can validate before running a job."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5.py (new — 15 pytest cases: connection encryption 4, project encryption 2, simulated-mode flow 4, backward compat 2, regression smoke 3)",
+    "/app/backend/tests/test_iteration4.py (updated — 1 assertion in TestProjectAutofillFromConnection: project response no longer includes client_secret; assert has_secret:True instead. This aligns with iter5's intentional API contract change.)"
+  ],
+  "success_rate": {
+    "backend": "100% (86/86 total: 15 iter5 + 71 iter1..4 regression)",
+    "frontend": "n/a (backend-only testing per review request)"
+  },
+  "test_credentials": "admin@migratetool.com / Admin@12345 (verified working via login endpoint at start of every fixture)",
+  "seed_data_creation": "All TEST_Iter5_* connections and projects are cleaned up via module-scoped fixture teardown (delete via API). Legacy plaintext test-doc is inserted directly via pymongo and removed in the test's finally block. No stray TEST_Iter5_* data should remain in the DB after the run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Five backend test files total (backend_test.py:29, test_iteration2.py:13, test_iteration3.py:15, test_iteration4.py:14, test_iteration5.py:15) = 86 tests, ~90s runtime with pytest-xdist -n auto. Encryption: db.tenant_connections.client_secret and db.projects.{source_tenant,destination_tenant}.client_secret are all stored with 'enc:v1:<Fernet-token>' prefix. crypto.decrypt_secret is passthrough for values without the prefix (legacy plaintext supported). CONN_ENCRYPTION_KEY in /app/backend/.env is 'PTKBma5HH1I5Gnl6QjTasG87ZyTi7wMLLSBed2NF5Ks='. Reveal via GET /api/tenant-connections/{id}?reveal=true still writes to db.audit_logs (added iter5). Project responses NO LONGER include client_secret — only has_secret:bool. Live discover with fake creds still returns 500 (pre-existing MSAL authority error propagation) — do NOT report this as iter5-caused; test_iteration5.py::TestLegacyPlaintextCompat accepts 200-or-500 for that call and only fails if the 500 body mentions decrypt/CONN_ENCRYPTION_KEY.",
+  "rca_of_the_issue": "N/A — no iter5-specific bugs found. All 10 acceptance criteria from the review request pass. The one 500 encountered during authoring (legacy plaintext discover) is a pre-existing MSAL authority-resolution error unrelated to encryption; encryption round-trip works correctly for all fresh and legacy records."
+}

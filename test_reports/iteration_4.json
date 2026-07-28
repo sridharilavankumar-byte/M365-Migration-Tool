@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration-4 (Tenant Connections manager) testing complete. Backend: 14/14 new pytest cases passing in /app/backend/tests/test_iteration4.py — create+masking, list, get with/without reveal, PUT-empty preserves secret, PUT-nonempty updates, DELETE→404, /test live path returns ok:false with authority/token failure message and populated latency_ms, plus 404 on missing IDs, plus a project autofill regression that verifies backend project.source_tenant.client_secret matches the reveal=true plaintext. Regression: 57/57 iter1+iter2+iter3 tests still passing (total 71/71). Frontend: Settings sidebar link routes to /app/settings, Add connection modal opens (data-testid=new-connection-btn) with required label/tenant_id/client_id/client_secret, submit shows sonner toast + closes modal + card appears with masked secret (bullets, no plaintext leak in DOM). Edit modal pre-fills label/domain/tenant_id/client_id/notes; client_secret input is empty with placeholder '•••••••• (unchanged)' — submitting without changing secret preserves the original (verified via reveal=true fetch). Test button calls /test; delete removes card after confirmation. Projects Create-modal shows ↓ load from saved… dropdowns for both source_tenant and destination_tenant, selecting an option autofills tenant_id/client_id/client_secret/domain/label; created project's source_tenant.client_secret equals the resolved plaintext from ?reveal=true.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings → Tenant Credentials panel", "issues": ["Empty state text 'No saved tenant connections yet.' is centered and readable; good contrast on #050505 with #00e5ff accent. Consider adding a hint pointing operators to grant admin consent AFTER first save (the tip block below is fine but visually separated)."]},
+      {"screen": "Settings connection card", "issues": ["Masked secret (first-2 + bullets + last-4) is displayed in monospace and truncates correctly. Delete button uses uses a red border/text — good affordance. No accessibility issues observed."]},
+      {"screen": "Projects → New Project modal", "issues": ["'↓ load from saved…' select is on the right of each tenant panel header — discoverable. Currently the dropdown is only rendered when savedConnections.length>0, so first-time users won't see it (expected behaviour, non-blocking)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter4_results.xml",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "None blocking. All iteration-4 acceptance criteria pass end-to-end."
+  ],
+  "critical_code_review_comments": [
+    "server.py:851-857 (_connection_out): when reveal=true the function returns the raw client_secret plaintext BUT also leaves the client_secret_masked field absent — good. However there is no additional audit/log entry when reveal=true is used; consider adding a minimal audit log row (who/when) since this endpoint is the only way a full secret ever leaves the DB. Recommended: db.audit_logs.insert_one({actor: user_id, action: 'connection.reveal', connection_id, ts}) inside get_tenant_connection when reveal is True.",
+    "server.py:889-904 (update_tenant_connection): the PUT accepts the same TenantConnectionBody used for create where label is required. If an operator PUTs with only {client_secret: 'xxx'} they'll fail with a 422 for missing label. Consider a separate TenantConnectionUpdate model with all fields optional, so partial updates are supported.",
+    "server.py:913-919 (test_tenant_connection): swallows all exceptions inside graph_adapter.test_connection but does not surface the connection_id in the returned message; if a UI later shows multiple test results it would be helpful to echo the label back too (already in the doc — a small tweak: return {**result, connection_id, label: doc.get('label')}).",
+    "server.py:860-869 (create_tenant_connection): stores client_secret in plaintext in Mongo. This is a materially riskier design than iter 1-3. Recommend at least symmetric encryption at rest using an app-managed key from env (e.g. cryptography.Fernet with a key derived from JWT_SECRET or a dedicated CONN_ENCRYPTION_KEY), so a Mongo dump doesn't expose all customer client secrets in plaintext.",
+    "SettingsPage.jsx:75-87 (test handler): shows the sonner toast for 4 seconds by default; the MSAL live token attempt can take 3-6 seconds on cold cache — during that window the button label switches to 'testing…' correctly but there is no in-place inline result indicator on the card itself (only the toast). Consider persisting the last test result (ok/mode/latency) on each card so operators can see which connections were verified when.",
+    "SettingsPage.jsx:68-73 (delete handler): uses window.confirm() — browser native dialog. Iter 2+ already introduced shadcn/sonner style modals; consider replacing with an in-app AlertDialog for consistency (minor UX; non-blocking).",
+    "ProjectsPage.jsx:38-57 (loadConnectionInto): fetches with ?reveal=true which puts the FULL client_secret into React state → the DOM. Even though the input is type=password, the value is inside <input value=...>, and can be trivially read via DevTools or a hostile browser extension. This is unavoidable if the modal must be self-contained, but a safer pattern would be to keep only the connection_id in the form and resolve the secret server-side at project-create time (e.g. body accepts source_connection_id which the API expands). Recommend adding this as a follow-up for iter 5."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new — 14 pytest cases for tenant-connections CRUD + live /test + project autofill regression)"
+  ],
+  "success_rate": {"backend": "100% (71/71 total: 14 iter4 + 57 iter1+2+3 regression)", "frontend": "100% (all iter4 critical UI flows: Settings CRUD, mask display, edit-preserve-secret, delete, Projects load-from-saved, secret resolution end-to-end)"},
+  "test_credentials": "admin@migratetool.com / Admin@12345 (seeded, verified working)",
+  "seed_data_creation": "All TEST_Iter4_* and TEST_UI_Iter4_* / TEST_UI_LoadSaved_* connections and TEST_UI_Iter4_Project_* projects were cleaned up after their tests (backend fixture teardown + explicit UI cleanup). One pre-existing 'Test Source Prod' connection from a smoke run remains in the DB; safe to keep or delete via Settings UI.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Four backend test files now: backend_test.py (iter1, 29), test_iteration2.py (iter2, 13), test_iteration3.py (iter3, 15), test_iteration4.py (iter4, 14) — total 71 tests, ~84s runtime. Tenant Connections collection is db.tenant_connections; secrets stored plaintext (see code-review comment #4). The /test endpoint hits real MSAL (login.microsoftonline.com) — expect ~500-4000ms per call and 'Unable to get authority configuration…' error for fake tenant ids. For Projects modal load-from-saved: the frontend calls GET /api/tenant-connections/{id}?reveal=true and pushes the full client_secret into React form state; be aware when testing that this value is visible in DevTools state. Reveal endpoint currently has NO audit logging (see comment #1).",
+  "rca_of_the_issue": "N/A — no bugs found in iteration 4. All 3 acceptance areas (Settings CRUD + masking, Edit preserves-secret, Projects load-from-saved autofill) are implemented correctly and verified end-to-end on both backend and frontend."
+}

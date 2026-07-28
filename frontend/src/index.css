@@ -1,0 +1,164 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fonts: IBM Plex Sans + IBM Plex Mono via Google Fonts; Cabinet Grotesk via Fontshare */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap');
+
+:root {
+    --bg: #050505;
+    --surface: #121212;
+    --surface-2: #1a1a1a;
+    --surface-3: #0a0a0a;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(255, 255, 255, 0.2);
+    --primary: #00e5ff;
+    --primary-hover: #00b3cc;
+    --text-main: #ffffff;
+    --text-muted: #a1a1aa;
+    --success: #00ff66;
+    --warning: #ffd600;
+    --failed: #ff3b30;
+    --pending: #52525b;
+}
+
+html, body, #root {
+    background: var(--bg);
+    color: var(--text-main);
+    min-height: 100vh;
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    margin: 0;
+}
+
+.font-display {
+    font-family: 'Cabinet Grotesk', 'IBM Plex Sans', sans-serif;
+    font-feature-settings: "ss01" on;
+}
+
+.font-mono, code, pre {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Shadcn override: make everything match terminal aesthetic */
+@layer base {
+    :root {
+        --background: 0 0% 2%;
+        --foreground: 0 0% 100%;
+        --card: 0 0% 7%;
+        --card-foreground: 0 0% 100%;
+        --popover: 0 0% 7%;
+        --popover-foreground: 0 0% 100%;
+        --primary: 187 100% 50%;
+        --primary-foreground: 0 0% 0%;
+        --secondary: 0 0% 10%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 0 0% 10%;
+        --muted-foreground: 0 0% 63%;
+        --accent: 0 0% 10%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 3 100% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 0 0% 15%;
+        --input: 0 0% 12%;
+        --ring: 187 100% 50%;
+        --radius: 0.125rem;
+    }
+    * {
+        border-color: var(--border);
+    }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* Selection */
+::selection { background: var(--primary); color: #000; }
+
+/* Utility layers */
+.grid-lines-bg {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+/* Scanline effect for terminal panels */
+.scanlines {
+    position: relative;
+}
+.scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(255,255,255,0.015) 2px,
+        rgba(255,255,255,0.015) 3px
+    );
+}
+
+/* Progress line effect */
+.progress-glow {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+}
+
+/* Blinking cursor for terminal */
+@keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+.cursor-blink::after {
+    content: '_';
+    animation: blink 1s step-end infinite;
+    color: var(--primary);
+    margin-left: 2px;
+}
+
+/* Row hover */
+.row-hover:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Focus ring override */
+.focus-ring:focus,
+.focus-ring:focus-visible {
+    outline: 1px solid var(--primary);
+    outline-offset: 1px;
+}
+
+/* Tracing beam animation for active job */
+@keyframes trace {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+.tracing-beam {
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(0, 229, 255, 0.15) 40%,
+        rgba(0, 229, 255, 0.6) 50%,
+        rgba(0, 229, 255, 0.15) 60%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: trace 2.4s linear infinite;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.9); }
+}
+.pulse-dot {
+    animation: pulseDot 1.4s ease-in-out infinite;
+}

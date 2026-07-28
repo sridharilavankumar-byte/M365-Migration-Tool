@@ -1,0 +1,99 @@
+{
+  "project_name": "Office 365 Tenant Migration Tool",
+  "theme_strategy": "Dark Mode Only - Tactical Command Center",
+  "archetype": "High-Contrast Enterprise Terminal",
+  "typography": {
+    "primary_heading_font": "Cabinet Grotesk",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "IBM Plex Mono",
+    "hierarchy": {
+      "h1": "text-4xl tracking-tighter font-medium text-white",
+      "h2": "text-2xl tracking-tight font-medium text-white",
+      "h3": "text-lg font-medium text-white",
+      "body": "text-sm text-zinc-400 leading-relaxed",
+      "data_labels": "text-xs font-mono tracking-[0.1em] uppercase text-zinc-500",
+      "log_output": "text-xs font-mono text-zinc-300"
+    },
+    "rules": [
+      "Use IBM Plex Mono for all numerical data, IP addresses, tenant IDs, logs, and statuses.",
+      "Never use Inter, Roboto, or Space Grotesk.",
+      "Data labels must be uppercase and tracked out.",
+      "Always use proper tracking for headings (tracking-tight)."
+    ]
+  },
+  "colors": {
+    "background": "#050505",
+    "surface": "#121212",
+    "surface_elevated": "#1A1A1A",
+    "border": "rgba(255, 255, 255, 0.08)",
+    "border_hover": "rgba(255, 255, 255, 0.2)",
+    "primary": "#00E5FF",
+    "primary_foreground": "#000000",
+    "text_main": "#FFFFFF",
+    "text_muted": "#A1A1AA",
+    "status": {
+      "success": "#00FF66",
+      "running": "#00E5FF",
+      "warning": "#FFD600",
+      "failed": "#FF3B30",
+      "pending": "#52525B"
+    }
+  },
+  "visual_enhancers": {
+    "surfaces": "Grid Borders: Expose the skeleton. Use border-collapse styles with 1px border-white/10 on edges. No soft shadows. Use sharp edges or max 2px border radius.",
+    "effects": "Use 'Tracing Beam' effect for active migration job cards to show data is moving. Add terminal scanline overlays on the live job logs panel.",
+    "borders": "Solid 1px strokes. No gradients on borders."
+  },
+  "component_guidelines": {
+    "header": "Solid surface `bg-[#050505]` with 1px bottom border `border-white/10`. CRITICAL: DO NOT use complete transparent backgrounds for header, sticky elements, dropdowns, or modals.",
+    "cards": "Cardless or completely flat rectangular surfaces. Override Shadcn Card to have `rounded-none` or `rounded-sm`, `bg-[#121212]`, and `border-white/10`. Inside, dense padding `p-6`.",
+    "tables": "Crucial for service modules (Exchange, SharePoint). Dense row height, sticky header. Map source to destination in two columns separated by an arrow icon. Use font-mono for item IDs.",
+    "buttons": "Sharp corners. Primary: `bg-[#00E5FF] text-black hover:bg-[#00B3CC]`. Secondary: `bg-transparent border border-white/20 text-white hover:bg-white/5`.",
+    "progress_bars": "1px or 2px height. No rounded thick bars. Represent data transfer with sharp, glowing lines.",
+    "badges": "Minimalist. `border border-{status}/30 text-{status} bg-{status}/10 rounded-none px-2 py-0.5 text-xs font-mono`.",
+    "tabs": "Underline style only. Active tab gets a primary color bottom border, inactive tabs remain muted text. No pill-shaped tabs.",
+    "inputs": "Flat, `bg-[#0A0A0A]`, 1px border, square corners. Focus state: `focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF]`."
+  },
+  "grids_and_layouts": {
+    "dashboard_bento": "High Density Grid (Mode B). grid-cols-1 md:grid-cols-4 gap-4. Top row: 4 summary metrics (col-span-1). Middle row: Active Jobs (col-span-3), Log Feed (col-span-1 row-span-2).",
+    "service_module_layout": "Split pane. Left: Hierarchy tree of tenants/users (w-64). Right: Main data table with discoverable items and mapping controls.",
+    "spacing": "Dense internally within tables/cards (`p-3` to `p-4`), but maintain clear structural gaps (`gap-4`, `gap-6`) between major grid sections."
+  },
+  "motion": {
+    "micro_interactions": "Instant, snappy transitions. Hover states should feel like hardware toggles, not soft software fades.",
+    "loaders": "ASCII spinners or sharp geometric pulsing lines instead of circular material loaders. Represent data migration actively."
+  },
+  "accessibility": {
+    "contrast": "Strict APCA adherence. Ensure #A1A1AA text is readable against #121212. All interactive elements MUST have visible focus rings (`focus:ring-[#00E5FF]`).",
+    "testing": "All interactive elements MUST include a `data-testid` attribute (e.g., `data-testid=\"start-migration-btn\"`)."
+  },
+  "media_and_icons": {
+    "icon_library": "@phosphor-icons/react",
+    "icon_style": "Duotone or Regular weight, strictly technical. Use icons for status, tenant mapping (Source -> Destination), and service types (Mail, Drive, Users)."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.pexels.com/photos/37730212/pexels-photo-37730212.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "category": "auth_background",
+      "description": "Close-up of server racks in a dark data center. Use as a highly opaque background (opacity-20) for the Admin Login screen."
+    },
+    {
+      "url": "https://images.pexels.com/photos/30426363/pexels-photo-30426363.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "category": "user_avatar",
+      "description": "IT Admin user avatar for the top right dashboard profile dropdown."
+    }
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You MUST build an ultra-clean, high-contrast dark mode dashboard. Do not use generic 'SaaS Blue' or soft shadows.",
+    "Do not add universal transitions (e.g. `transition: all`). Target specific properties.",
+    "Create depth through 1px borders and slight background color shifts (from #050505 to #121212 to #1A1A1A), NOT shadows.",
+    "Ensure all Shadcn components (Cards, Tables, Buttons, Inputs) have their border-radius overridden to `rounded-none` or `rounded-sm` for a sharp, technical enterprise look.",
+    "Use @phosphor-icons/react for all iconography to match the technical density.",
+    "Never use AI emoji characters.",
+    "For the job queue and logs, design it like a real developer terminal (font-mono, dense, distinct status colors).",
+    "Use sonner for toast notifications, located at /app/frontend/src/components/ui/sonner.jsx.",
+    "Always apply `data-testid` to buttons, links, and forms.",
+    "Share the guideline for .jsx and .js files not for .tsx files as the workspace uses javascript.",
+    "CRITICAL: DO NOT use complete transparent backgrounds in header, overlays, dropdowns, or modals."
+  ]
+}
