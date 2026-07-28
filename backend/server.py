@@ -1,4 +1,4 @@
-﻿from dotenv import load_dotenv
+from dotenv import load_dotenv
 from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -12,8 +12,12 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal, Annotated, Dict, Any
 
+import base64
+import io
 import bcrypt
 import jwt as pyjwt
+import pyotp
+import qrcode
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, BackgroundTasks, status
 from fastapi.security import HTTPBearer
@@ -70,6 +74,15 @@ def create_access_token(user_id: str, email: str) -> str:
     return pyjwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 
+def create_mfa_pending_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "type": "mfa_pending",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+    }
+    return pyjwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -114,6 +127,20 @@ class RegisterBody(BaseModel):
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
+
+
+class MFAVerifyBody(BaseModel):
+    pending_token: str
+    code: str
+
+
+class MFAEnableBody(BaseModel):
+    code: str
+
+
+class MFADisableBody(BaseModel):
+    password: str
+    code: str
 
 
 class TenantConfig(BaseModel):
@@ -226,6 +253,9 @@ async def login(body: LoginBody, response: Response):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("mfa_enabled"):
+        pending_token = create_mfa_pending_token(str(user["_id"]))
+        return {"mfa_required": True, "pending_token": pending_token}
     token = create_access_token(str(user["_id"]), email)
     set_auth_cookie(response, token)
     return {
@@ -235,6 +265,84 @@ async def login(body: LoginBody, response: Response):
         "role": user.get("role", "operator"),
         "token": token,
     }
+
+
+@api_router.post("/auth/mfa/verify")
+async def mfa_verify(body: MFAVerifyBody, response: Response):
+    try:
+        payload = pyjwt.decode(body.pending_token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "mfa_pending":
+            raise HTTPException(status_code=401, detail="Invalid pending token")
+        user_id = payload["sub"]
+    except pyjwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired pending token")
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user or not user.get("mfa_enabled"):
+        raise HTTPException(status_code=401, detail="MFA not enabled for this user")
+    secret = crypto.decrypt_secret(user["mfa_secret"])
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    token = create_access_token(str(user["_id"]), user["email"])
+    set_auth_cookie(response, token)
+    return {
+        "id": str(user["_id"]),
+        "email": user["email"],
+        "name": user.get("name", ""),
+        "role": user.get("role", "operator"),
+        "token": token,
+    }
+
+
+@api_router.post("/auth/mfa/setup")
+async def mfa_setup(current_user: dict = Depends(get_current_user)):
+    secret = pyotp.random_base32()
+    await db.users.update_one(
+        {"_id": ObjectId(current_user["id"])},
+        {"$set": {"mfa_secret_pending": crypto.encrypt_secret(secret)}},
+    )
+    totp = pyotp.TOTP(secret)
+    otpauth_uri = totp.provisioning_uri(name=current_user["email"], issuer_name="M365 MigrateSuite")
+    qr_img = qrcode.make(otpauth_uri)
+    buf = io.BytesIO()
+    qr_img.save(buf, format="PNG")
+    qr_base64 = base64.b64encode(buf.getvalue()).decode()
+    return {"secret": secret, "qr_code_base64": qr_base64, "otpauth_uri": otpauth_uri}
+
+
+@api_router.post("/auth/mfa/enable")
+async def mfa_enable(body: MFAEnableBody, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"_id": ObjectId(current_user["id"])})
+    pending = user.get("mfa_secret_pending")
+    if not pending:
+        raise HTTPException(status_code=400, detail="No MFA setup in progress — call /auth/mfa/setup first")
+    secret = crypto.decrypt_secret(pending)
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    await db.users.update_one(
+        {"_id": ObjectId(current_user["id"])},
+        {"$set": {"mfa_enabled": True, "mfa_secret": pending}, "$unset": {"mfa_secret_pending": ""}},
+    )
+    return {"ok": True, "mfa_enabled": True}
+
+
+@api_router.post("/auth/mfa/disable")
+async def mfa_disable(body: MFADisableBody, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"_id": ObjectId(current_user["id"])})
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    if not user.get("mfa_enabled"):
+        raise HTTPException(status_code=400, detail="MFA is not enabled")
+    secret = crypto.decrypt_secret(user["mfa_secret"])
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(body.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    await db.users.update_one(
+        {"_id": ObjectId(current_user["id"])},
+        {"$set": {"mfa_enabled": False}, "$unset": {"mfa_secret": ""}},
+    )
+    return {"ok": True, "mfa_enabled": False}
 
 
 @api_router.post("/auth/logout")

@@ -1,5 +1,5 @@
-﻿"""
-Microsoft Graph API adapter â€” app-only client credentials flow via MSAL.
+"""
+Microsoft Graph API adapter ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â app-only client credentials flow via MSAL.
 
 Each project holds a source_tenant and destination_tenant config with:
   tenant_id, client_id, client_secret, domain
@@ -27,7 +27,7 @@ logger = logging.getLogger("graph_adapter")
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 DEFAULT_SCOPE = ["https://graph.microsoft.com/.default"]
 
-# In-process token cache â€” keyed by (tenant_id, client_id)
+# In-process token cache ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â keyed by (tenant_id, client_id)
 _APP_CACHE: Dict[str, msal.ConfidentialClientApplication] = {}
 
 
@@ -67,7 +67,7 @@ async def acquire_token(tenant_cfg: Dict[str, Any]) -> str:
         result = app.acquire_token_for_client(scopes=DEFAULT_SCOPE)
         if "access_token" not in result:
             raise GraphError(
-                f"Token acquisition failed: {result.get('error')} â€” {result.get('error_description', '')}",
+                f"Token acquisition failed: {result.get('error')} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {result.get('error_description', '')}",
                 status_code=401,
             )
         return result["access_token"]
@@ -115,7 +115,7 @@ async def _paginate(url: str, tenant_cfg: Dict[str, Any], limit: int = 500) -> L
 
 
 # =============================================================================
-# Public adapter API â€” each function returns real Graph data OR simulated data.
+# Public adapter API ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â each function returns real Graph data OR simulated data.
 # =============================================================================
 
 async def test_connection(tenant_cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -127,7 +127,7 @@ async def test_connection(tenant_cfg: Dict[str, Any]) -> Dict[str, Any]:
             "mode": "simulated",
             "latency_ms": random.randint(45, 180),
             "endpoint": "graph.microsoft.com",
-            "message": "Credentials not configured â€” running in simulated mode.",
+            "message": "Credentials not configured ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â running in simulated mode.",
         }
     t0 = time.time()
     try:
@@ -152,22 +152,101 @@ async def test_connection(tenant_cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 # ---------------- Discovery per service ----------------
 
+async def _fetch_mailbox_usage_map(tenant_cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Fetch real mailbox size/item count for every mailbox in one call via
+    the Reports API. Returns a dict keyed by lowercased UPN. Requires the
+    Reports.Read.All Application permission. Fails soft (empty dict) so
+    discovery still succeeds even if the permission is missing."""
+    import csv
+    import io
+    try:
+        token = await acquire_token(tenant_cfg)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{GRAPH_BASE}/reports/getMailboxUsageDetail(period='D7')"
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code >= 400:
+            logger.warning(f"Mailbox usage report unavailable: {resp.status_code} {resp.text[:200]}")
+            return {}
+        reader = csv.DictReader(io.StringIO(resp.text))
+        usage_map: Dict[str, Dict[str, Any]] = {}
+        for row in reader:
+            upn = (row.get("User Principal Name") or "").strip().lower()
+            if not upn:
+                continue
+            try:
+                size_bytes = int(row.get("Storage Used (Byte)") or 0)
+            except ValueError:
+                size_bytes = 0
+            try:
+                item_count = int(row.get("Item Count") or 0)
+            except ValueError:
+                item_count = 0
+            usage_map[upn] = {
+                "size_gb": round(size_bytes / (1024 ** 3), 2),
+                "item_count": item_count,
+            }
+        return usage_map
+    except Exception as e:
+        logger.warning(f"Failed to fetch mailbox usage report: {e}")
+        return {}
+
+
 async def discover_exchange(tenant_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not _is_configured(tenant_cfg):
         return _sim("exchange")
     url = f"{GRAPH_BASE}/users?$select=id,displayName,mail,userPrincipalName&$top=100"
     users = await _paginate(url, tenant_cfg, limit=500)
-    return [
-        {
+    usage_map = await _fetch_mailbox_usage_map(tenant_cfg)
+    result: List[Dict[str, Any]] = []
+    for u in users:
+        upn = u.get("mail") or u.get("userPrincipalName", "")
+        if not upn:
+            continue
+        usage = usage_map.get(upn.strip().lower(), {})
+        result.append({
             "id": u["id"],
             "display_name": u.get("displayName") or u.get("userPrincipalName", ""),
-            "primary_smtp": u.get("mail") or u.get("userPrincipalName", ""),
-            "mailbox_size_gb": 0,
-            "item_count": 0,
+            "primary_smtp": upn,
+            "mailbox_size_gb": usage.get("size_gb", 0),
+            "item_count": usage.get("item_count", 0),
             "type": "UserMailbox",
-        }
-        for u in users if u.get("mail") or u.get("userPrincipalName")
-    ]
+        })
+    return result
+
+
+async def _fetch_sharepoint_usage_map(tenant_cfg: Dict[str, Any]) -> Dict[str, float]:
+    """Fetch real site storage usage in one call via the Reports API.
+    Matches by the site-collection GUID (middle segment of Graph's compound
+    site id) against the report's Site Id column, since the report's own
+    Site URL column is returned empty by Microsoft for group-connected sites."""
+    import csv
+    import io
+    try:
+        token = await acquire_token(tenant_cfg)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{GRAPH_BASE}/reports/getSharePointSiteUsageDetail(period='D7')"
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code >= 400:
+            logger.warning(f"SharePoint usage report unavailable: {resp.status_code} {resp.text[:200]}")
+            return {}
+        text = resp.text.lstrip("\ufeff")
+        reader = csv.DictReader(io.StringIO(text))
+        usage_map: Dict[str, float] = {}
+        for row in reader:
+            site_id = (row.get("Site Id") or "").strip().lower()
+            if not site_id:
+                continue
+            try:
+                size_bytes = int(row.get("Storage Used (Byte)") or 0)
+            except ValueError:
+                size_bytes = 0
+            usage_map[site_id] = round(size_bytes / (1024 ** 3), 2)
+        return usage_map
+    except Exception as e:
+        logger.warning(f"Failed to fetch SharePoint usage report: {e}")
+        return {}
 
 
 async def discover_sharepoint(tenant_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -175,27 +254,74 @@ async def discover_sharepoint(tenant_cfg: Dict[str, Any]) -> List[Dict[str, Any]
         return _sim("sharepoint")
     data = await _graph_request("GET", f"{GRAPH_BASE}/sites?search=*", tenant_cfg)
     sites = data.get("value", [])
-    return [
-        {
+    usage_map = await _fetch_sharepoint_usage_map(tenant_cfg)
+    result: List[Dict[str, Any]] = []
+    for s in sites:
+        web_url = s.get("webUrl", "")
+        raw_id = s.get("id", "")
+        site_guid = raw_id.split(",")[1].lower() if raw_id.count(",") >= 2 else ""
+        storage_gb = usage_map.get(site_guid, 0)
+        result.append({
             "id": s["id"],
             "display_name": s.get("displayName") or s.get("name", ""),
-            "url": s.get("webUrl", ""),
-            "storage_gb": 0,
+            "url": web_url,
+            "storage_gb": storage_gb,
             "template": s.get("root", {}).get("template", "Team"),
-        }
-        for s in sites
-    ]
+        })
+    return result
+
+
+async def _fetch_onedrive_usage_map(tenant_cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Fetch real OneDrive storage/file count in one call via the Reports API."""
+    import csv
+    import io
+    try:
+        token = await acquire_token(tenant_cfg)
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{GRAPH_BASE}/reports/getOneDriveUsageAccountDetail(period='D7')"
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code >= 400:
+            logger.warning(f"OneDrive usage report unavailable: {resp.status_code} {resp.text[:200]}")
+            return {}
+        reader = csv.DictReader(io.StringIO(resp.text))
+        usage_map: Dict[str, Dict[str, Any]] = {}
+        for row in reader:
+            upn = (row.get("Owner Principal Name") or "").strip().lower()
+            if not upn:
+                continue
+            try:
+                size_bytes = int(row.get("Storage Used (Byte)") or 0)
+            except ValueError:
+                size_bytes = 0
+            try:
+                file_count = int(row.get("File Count") or 0)
+            except ValueError:
+                file_count = 0
+            usage_map[upn] = {"storage_gb": round(size_bytes / (1024 ** 3), 2), "file_count": file_count}
+        return usage_map
+    except Exception as e:
+        logger.warning(f"Failed to fetch OneDrive usage report: {e}")
+        return {}
 
 
 async def discover_onedrive(tenant_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not _is_configured(tenant_cfg):
         return _sim("onedrive")
     users = await _paginate(f"{GRAPH_BASE}/users?$select=id,displayName,userPrincipalName&$top=100", tenant_cfg, 200)
-    return [
-        {"id": u["id"], "display_name": f"{u.get('displayName','')} OneDrive",
-         "owner": u.get("userPrincipalName", ""), "storage_gb": 0, "file_count": 0}
-        for u in users
-    ]
+    usage_map = await _fetch_onedrive_usage_map(tenant_cfg)
+    result: List[Dict[str, Any]] = []
+    for u in users:
+        upn = u.get("userPrincipalName", "")
+        usage = usage_map.get(upn.strip().lower(), {})
+        result.append({
+            "id": u["id"],
+            "display_name": f"{u.get('displayName', '')} OneDrive",
+            "owner": upn,
+            "storage_gb": usage.get("storage_gb", 0),
+            "file_count": usage.get("file_count", 0),
+        })
+    return result
 
 
 async def discover_groups(tenant_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -301,7 +427,7 @@ async def migrate_item(
             "stats": {},
         }
 
-    # Live path â€” delegate to per-service migration
+    # Live path ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â delegate to per-service migration
     import graph_migrations as gm
     fn = gm.DISPATCH.get(service_type)
     if not fn:
@@ -338,7 +464,7 @@ async def migrate_item(
 # ---------------- Simulation dataset (kept in sync with server previously) ----
 
 def _sim(service_type: str) -> List[Dict[str, Any]]:
-    """Deterministic simulated dataset â€” used when credentials aren't configured."""
+    """Deterministic simulated dataset ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â used when credentials aren't configured."""
     templates = {
         "exchange": (64, lambda i: {
             "id": f"mbx_{i:04d}", "display_name": f"User {i:03d}",

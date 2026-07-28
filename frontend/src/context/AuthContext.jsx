@@ -24,6 +24,14 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const { data } = await api.post("/auth/login", { email, password });
+    if (data.mfa_required) return data;
+    if (data.token) localStorage.setItem("mm_token", data.token);
+    setUser(data);
+    return data;
+  };
+
+  const verifyMfa = async (pendingToken, code) => {
+    const { data } = await api.post("/auth/mfa/verify", { pending_token: pendingToken, code });
     if (data.token) localStorage.setItem("mm_token", data.token);
     setUser(data);
     return data;
@@ -43,7 +51,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, checking, login, register, logout }}>
+    <AuthContext.Provider value={{ user, checking, login, register, logout, verifyMfa }}>
       {children}
     </AuthContext.Provider>
   );

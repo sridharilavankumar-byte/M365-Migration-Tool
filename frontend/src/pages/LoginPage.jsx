@@ -5,13 +5,16 @@ import { formatApiErrorDetail } from "@/lib/api";
 import { ShieldCheck, ArrowRight } from "@phosphor-icons/react";
 
 export default function LoginPage() {
-  const { login, register } = useAuth();
+  const { login, register, verifyMfa } = useAuth();
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("admin@migratetool.com");
   const [password, setPassword] = useState("Admin@12345");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mfaStep, setMfaStep] = useState(false);
+  const [pendingToken, setPendingToken] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const nav = useNavigate();
   const loc = useLocation();
   const returnTo = loc.state?.from || "/app/dashboard";
@@ -21,8 +24,17 @@ export default function LoginPage() {
     setError("");
     setBusy(true);
     try {
-      if (mode === "login") await login(email, password);
-      else await register(email, password, name || email.split("@")[0]);
+      if (mode === "login") {
+        const result = await login(email, password);
+        if (result && result.mfa_required) {
+          setPendingToken(result.pending_token);
+          setMfaStep(true);
+          setBusy(false);
+          return;
+        }
+      } else {
+        await register(email, password, name || email.split("@")[0]);
+      }
       nav(returnTo, { replace: true });
     } catch (err) {
       setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
@@ -30,6 +42,78 @@ export default function LoginPage() {
       setBusy(false);
     }
   };
+
+  const submitMfa = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await verifyMfa(pendingToken, mfaCode);
+      nav(returnTo, { replace: true });
+    } catch (err) {
+      setError(formatApiErrorDetail(err.response?.data?.detail) || err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mfaStep) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center px-6">
+        <div className="w-full max-w-sm border border-white/10 bg-[#0a0a0a]/90 p-10">
+          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500">
+            <ShieldCheck size={14} className="text-[#00e5ff]" />
+            two-factor verification
+          </div>
+          <h2 className="font-display text-3xl tracking-tighter mt-3">Enter code</h2>
+          <p className="text-sm text-zinc-500 mt-2">
+            Enter the 6-digit code from your authenticator app.
+          </p>
+          <form onSubmit={submitMfa} className="mt-8 space-y-4">
+            <div>
+              <label className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 block mb-2">Authentication Code</label>
+              <input
+                data-testid="mfa-code-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/[^0-9]/g, ""))}
+                className="w-full bg-[#050505] border border-white/10 px-3 py-2.5 text-sm text-white focus:border-[#00e5ff] focus:outline-none font-mono tracking-[0.3em] text-center text-lg"
+                placeholder="000000"
+                autoFocus
+              />
+            </div>
+            {error && (
+              <div className="text-xs font-mono text-[#ff3b30] border border-[#ff3b30]/30 bg-[#ff3b30]/5 px-3 py-2" data-testid="login-error">
+                err :: {error}
+              </div>
+            )}
+            <button
+              data-testid="mfa-submit-btn"
+              type="submit"
+              disabled={busy || mfaCode.length !== 6}
+              className="w-full bg-[#00e5ff] hover:bg-[#00b3cc] disabled:opacity-50 text-black font-medium text-sm px-4 py-3"
+            >
+              {busy ? "verifying" : "Verify"}
+            </button>
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => { setMfaStep(false); setMfaCode(""); setError(""); }}
+                className="text-xs text-zinc-500 hover:text-white font-mono"
+                data-testid="mfa-back-btn"
+              >
+                back to sign in
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white relative overflow-hidden">
@@ -63,14 +147,14 @@ export default function LoginPage() {
                   <span className="text-[#00e5ff]">Zero downtime.</span>
                 </h1>
                 <p className="text-sm text-zinc-400 mt-6 max-w-sm leading-relaxed">
-                  Exchange mailboxes, SharePoint sites, OneDrive, Teams, Groups, Distribution Lists, Contacts, Calendars and Public Folders — each with an isolated migration engine.
+                  Exchange mailboxes, SharePoint sites, OneDrive, Teams, Groups, Distribution Lists, Contacts, Calendars and Public Folders â€” each with an isolated migration engine.
                 </p>
               </div>
               <div className="mt-10 grid grid-cols-3 gap-4 pt-6 border-t border-white/10">
                 {[
                   ["09", "services"],
                   ["24/7", "orchestration"],
-                  ["∞", "throughput"],
+                  ["âˆž", "throughput"],
                 ].map(([v, l]) => (
                   <div key={l}>
                     <div className="font-display text-3xl tracking-tighter">{v}</div>
@@ -144,7 +228,7 @@ export default function LoginPage() {
                   disabled={busy}
                   className="w-full bg-[#00e5ff] hover:bg-[#00b3cc] disabled:opacity-50 text-black font-medium text-sm px-4 py-3 flex items-center justify-center gap-2 transition-colors"
                 >
-                  {busy ? "authenticating…" : mode === "login" ? "Sign In" : "Create Account"}
+                  {busy ? "authenticatingâ€¦" : mode === "login" ? "Sign In" : "Create Account"}
                   <ArrowRight size={14} weight="bold" />
                 </button>
 
@@ -155,7 +239,7 @@ export default function LoginPage() {
                     className="text-xs text-zinc-500 hover:text-white font-mono"
                     data-testid="toggle-auth-mode"
                   >
-                    {mode === "login" ? "→ register new operator" : "→ sign in existing"}
+                    {mode === "login" ? "â†’ register new operator" : "â†’ sign in existing"}
                   </button>
                 </div>
               </form>

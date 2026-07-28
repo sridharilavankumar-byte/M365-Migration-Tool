@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import TopBar from "@/components/layout/TopBar";
 import { Panel, DataLabel, StatusBadge } from "@/components/shared/Primitives";
@@ -20,7 +20,7 @@ const SERVICE_CONFIG = {
       { key: "display_name", label: "Display Name" },
       { key: "primary_smtp", label: "Primary SMTP", mono: true },
       { key: "mailbox_size_gb", label: "Size (GB)", mono: true, right: true },
-      { key: "item_count", label: "Items", mono: true, right: true, format: (v) => v.toLocaleString() },
+      { key: "item_count", label: "Items", mono: true, right: true, format: (v) => (v ?? 0).toLocaleString() },
     ],
   },
   sharepoint: {
@@ -42,7 +42,7 @@ const SERVICE_CONFIG = {
       { key: "display_name", label: "OneDrive" },
       { key: "owner", label: "Owner", mono: true },
       { key: "storage_gb", label: "Storage (GB)", mono: true, right: true },
-      { key: "file_count", label: "Files", mono: true, right: true, format: (v) => v.toLocaleString() },
+      { key: "file_count", label: "Files", mono: true, right: true, format: (v) => (v ?? 0).toLocaleString() },
     ],
   },
   distribution_lists: {
@@ -94,7 +94,7 @@ const SERVICE_CONFIG = {
     columns: [
       { key: "display_name", label: "Calendar" },
       { key: "owner", label: "Owner", mono: true },
-      { key: "event_count", label: "Events", mono: true, right: true, format: (v) => v.toLocaleString() },
+      { key: "event_count", label: "Events", mono: true, right: true, format: (v) => (v ?? 0).toLocaleString() },
     ],
   },
   public_folders: {
@@ -103,7 +103,7 @@ const SERVICE_CONFIG = {
     description: "Migrate public folder hierarchies including permissions and mail-enabled folders.",
     columns: [
       { key: "display_name", label: "Path", mono: true },
-      { key: "item_count", label: "Items", mono: true, right: true, format: (v) => v.toLocaleString() },
+      { key: "item_count", label: "Items", mono: true, right: true, format: (v) => (v ?? 0).toLocaleString() },
       { key: "size_gb", label: "Size (GB)", mono: true, right: true },
     ],
   },
@@ -125,7 +125,8 @@ export default function ServiceModule() {
   const [hideSynced, setHideSynced] = useState(false);
   const nav = useNavigate();
 
-  useEffect(() => { setSelected(new Set()); setRunMode(null); setCheckpoint(null); }, [serviceType, current?.id]);
+  const requestIdRef = useRef(0);
+  useEffect(() => { requestIdRef.current += 1; setItems([]); setSelected(new Set()); setRunMode(null); setCheckpoint(null); }, [serviceType, current?.id]);
 
   const loadCheckpoint = async () => {
     if (!current) return;
@@ -147,16 +148,18 @@ export default function ServiceModule() {
 
   const discover = async () => {
     if (!current) { toast.error("Select a project first"); return; }
+    const myRequestId = requestIdRef.current;
     setLoading(true);
     try {
       const { data } = await api.get(`/services/${serviceType}/discover`, { params: { project_id: current.id } });
+      if (requestIdRef.current !== myRequestId) return;
       setItems(data.items);
       setRunMode(data.mode);
       toast.success(`[${(data.mode || "sim").toUpperCase()}] Discovered ${data.total} ${cfg.name.toLowerCase()}`);
       await loadCheckpoint();
     } catch (err) {
-      toast.error(formatApiErrorDetail(err.response?.data?.detail));
-    } finally { setLoading(false); }
+      if (requestIdRef.current === myRequestId) toast.error(formatApiErrorDetail(err.response?.data?.detail));
+    } finally { if (requestIdRef.current === myRequestId) setLoading(false); }
   };
 
   const filtered = useMemo(() => {
@@ -191,7 +194,7 @@ export default function ServiceModule() {
         mode,
         concurrency,
       });
-      toast.success(`Migration started — ${data.total} items`);
+      toast.success(`Migration started ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${data.total} items`);
       nav(`/app/jobs/${data.id}`);
     } catch (err) {
       toast.error(formatApiErrorDetail(err.response?.data?.detail));
@@ -215,7 +218,7 @@ export default function ServiceModule() {
               className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 border border-white/20 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
             >
               <MagnifyingGlass size={14} />
-              {loading ? "discovering…" : "discover"}
+              {loading ? "discoveringÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦" : "discover"}
             </button>
             <button
               onClick={startMigration}
@@ -233,7 +236,7 @@ export default function ServiceModule() {
         {!current && (
           <Panel className="p-6">
             <div className="text-sm text-zinc-400">
-              No active project. <Link to="/app/projects" className="text-[#00e5ff] hover:underline">Select or create one →</Link>
+              No active project. <Link to="/app/projects" className="text-[#00e5ff] hover:underline">Select or create one ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢</Link>
             </div>
           </Panel>
         )}
@@ -271,7 +274,7 @@ export default function ServiceModule() {
                   data-testid="migration-concurrency"
                   className="mt-1 bg-[#050505] border border-white/10 px-2 py-1 text-xs font-mono focus:border-[#00e5ff] focus:outline-none"
                 >
-                  {[1, 2, 3, 5, 8, 10].map((n) => <option key={n} value={n}>{n}× parallel</option>)}
+                  {[1, 2, 3, 5, 8, 10].map((n) => <option key={n} value={n}>{n}ÃƒÆ’Ã¢â‚¬â€ parallel</option>)}
                 </select>
               </div>
               <div>
@@ -304,9 +307,9 @@ export default function ServiceModule() {
                   <DataLabel>checkpoint</DataLabel>
                   <div className="font-mono text-xs mt-1">
                     <span className="text-[#00ff66]">{checkpoint.stats.success}</span>
-                    <span className="text-zinc-500"> ok · </span>
+                    <span className="text-zinc-500"> ok Ãƒâ€šÃ‚Â· </span>
                     <span className="text-[#ff3b30]">{checkpoint.stats.failed}</span>
-                    <span className="text-zinc-500"> err · </span>
+                    <span className="text-zinc-500"> err Ãƒâ€šÃ‚Â· </span>
                     <span className="text-zinc-300">{checkpoint.stats.total_known}</span>
                     <span className="text-zinc-500"> tracked</span>
                   </div>
@@ -339,14 +342,14 @@ export default function ServiceModule() {
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">
-                {filtered.length} of {items.length} · {selected.size} selected
+                {filtered.length} of {items.length} Ãƒâ€šÃ‚Â· {selected.size} selected
               </div>
             </div>
             <div className="flex items-center gap-2">
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="filter…"
+                placeholder="filterÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"
                 data-testid="filter-input"
                 className="bg-[#050505] border border-white/10 px-3 py-1.5 text-xs font-mono focus:border-[#00e5ff] focus:outline-none w-56"
               />
@@ -409,7 +412,7 @@ export default function ServiceModule() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">
-                      → {current?.destination_tenant.domain || "—"}
+                      ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ {current?.destination_tenant.domain || "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â"}
                     </td>
                   </tr>
                 ))}
