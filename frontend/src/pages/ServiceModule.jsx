@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   Envelope, Cloud, HardDrives, UsersFour, ChatCircleDots,
   IdentificationBadge, AddressBook, CalendarBlank, Folder,
-  MagnifyingGlass, Play, ArrowsClockwise, ArrowRight,
+  MagnifyingGlass, Play, ArrowsClockwise, ArrowRight, DownloadSimple,
 } from "@phosphor-icons/react";
 
 const SERVICE_CONFIG = {
@@ -216,6 +216,26 @@ export default function ServiceModule() {
   if (!cfg) return <div className="p-8 text-zinc-400">Unknown service.</div>;
   const Icon = cfg.icon;
 
+  const exportList = () => {
+    if (!items.length) return;
+    const headers = cfg.columns.map((c) => c.label);
+    const rows = items.map((it) => cfg.columns.map((c) => {
+      const v = it[c.key];
+      const cell = v === null || v === undefined ? "" : String(v);
+      return `"${cell.replace(/"/g, '""')}"`;
+    }).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${serviceType}-discovered-list.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <TopBar
@@ -223,6 +243,15 @@ export default function ServiceModule() {
         subtitle={cfg.description}
         right={
           <div className="flex items-center gap-2">
+            <button
+              onClick={exportList}
+              disabled={!items.length}
+              data-testid="export-list-btn"
+              className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 border border-white/20 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
+            >
+              <DownloadSimple size={14} />
+              export list
+            </button>
             <button
               onClick={discover}
               disabled={loading || !current}
@@ -411,7 +440,7 @@ export default function ServiceModule() {
                     </td>
                     {cfg.columns.map((c) => (
                       <td key={c.key} className={`px-4 py-2.5 ${c.mono ? "font-mono text-xs" : "text-sm"} ${c.right ? "text-right" : "text-left"} text-zinc-200`}>
-                        {c.key === "member_count" && (serviceType === "groups" || serviceType === "distribution_lists") ? (
+                        {c.key === "member_count" && (serviceType === "groups" || serviceType === "distribution_lists" || serviceType === "teams") ? (
                           <button
                             type="button"
                             onClick={() => openMembers(it.id, it.display_name)}

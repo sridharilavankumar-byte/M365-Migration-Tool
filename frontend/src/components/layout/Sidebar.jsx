@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   ChartLineUp, Envelope, Cloud, HardDrives, UsersFour,
   ChatCircleDots, IdentificationBadge, AddressBook, CalendarBlank,
-  Folder, Stack, GearSix, Terminal, GitBranch, Clock,
+  Folder, Stack, GearSix, Terminal, GitBranch, Clock, ChartBar,
 } from "@phosphor-icons/react";
 
 const NAV_ITEMS = [
@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { to: "/app/services/public_folders", label: "Public Folders", icon: Folder, testid: "nav-pf" },
   { section: "Operations" },
   { to: "/app/jobs", label: "Job Queue", icon: Stack, testid: "nav-jobs" },
+  { to: "/app/reports", label: "Reports", icon: ChartBar, testid: "nav-reports" },
   { to: "/app/schedules", label: "Schedules", icon: Clock, testid: "nav-schedules" },
   { to: "/app/logs", label: "Audit Logs", icon: Terminal, testid: "nav-logs" },
   { to: "/app/settings", label: "Settings", icon: GearSix, testid: "nav-settings" },

@@ -12,6 +12,7 @@ import JobDetail from "@/pages/JobDetail";
 import LogsPage from "@/pages/LogsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import SchedulesPage from "@/pages/SchedulesPage";
+import ReportsPage from "@/pages/ReportsPage";
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
               <Route path="jobs" element={<JobsPage />} />
               <Route path="jobs/:jobId" element={<JobDetail />} />
               <Route path="schedules" element={<SchedulesPage />} />
+              <Route path="reports" element={<ReportsPage />} />
               <Route path="logs" element={<LogsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>

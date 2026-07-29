@@ -315,7 +315,7 @@ async def mfa_enable(body: MFAEnableBody, current_user: dict = Depends(get_curre
     user = await db.users.find_one({"_id": ObjectId(current_user["id"])})
     pending = user.get("mfa_secret_pending")
     if not pending:
-        raise HTTPException(status_code=400, detail="No MFA setup in progress â€” call /auth/mfa/setup first")
+        raise HTTPException(status_code=400, detail="No MFA setup in progress ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â call /auth/mfa/setup first")
     secret = crypto.decrypt_secret(pending)
     totp = pyotp.TOTP(secret)
     if not totp.verify(body.code, valid_window=1):
@@ -376,7 +376,7 @@ async def create_project(body: ProjectCreate, current_user: dict = Depends(get_c
 
 
 def _project_out(p: Dict[str, Any]) -> Dict[str, Any]:
-    """Format a project document for API response Ã¢â‚¬â€ mask both tenant secrets."""
+    """Format a project document for API response ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â mask both tenant secrets."""
     p = dict(p)
     if "_id" in p:
         p["id"] = str(p.pop("_id"))
@@ -390,7 +390,7 @@ def _project_out(p: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _decrypt_project(p: Dict[str, Any]) -> Dict[str, Any]:
-    """Internal helper Ã¢â‚¬â€ returns a project dict with decrypted tenant secrets,
+    """Internal helper ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â returns a project dict with decrypted tenant secrets,
     for feeding into graph_adapter / MSAL."""
     p = dict(p)
     p["source_tenant"] = crypto.decrypt_tenant_config(p.get("source_tenant") or {})
@@ -462,7 +462,7 @@ async def preflight(project_id: str, current_user: dict = Depends(get_current_us
         {"name": "Destination connectivity", "status": "pass" if dst_conn.get("ok") else "fail", "detail": dst_conn.get("message", "")},
     ]
 
-    # License / quota inspection Ã¢â‚¬â€ attempt via Graph, fall back to simulation
+    # License / quota inspection ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â attempt via Graph, fall back to simulation
     dest = p["destination_tenant"]
     licenses_available = 0
     storage_free_tb = 0.0
@@ -524,7 +524,7 @@ async def _discover(service_type: str, project: Dict[str, Any]) -> List[Dict[str
         try:
             items = await graph_adapter.DISCOVERY_MAP[service_type](src)
         except Exception as e:
-            # Live Graph call failed Ã¢â‚¬â€ surface a clean 400 rather than 500
+            # Live Graph call failed ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â surface a clean 400 rather than 500
             raise HTTPException(
                 status_code=400,
                 detail=f"Graph discovery failed: {str(e)[:300]}. Check tenant credentials & admin consent.",
@@ -547,7 +547,7 @@ async def discover_items(service_type: str, project_id: str, current_user: dict 
 
 @api_router.get("/services/{service_type}/{item_id}/members")
 async def list_item_members(service_type: str, item_id: str, project_id: str, current_user: dict = Depends(get_current_user)):
-    if service_type not in ("groups", "distribution_lists"):
+    if service_type not in ("groups", "distribution_lists", "teams"):
         raise HTTPException(status_code=400, detail="Member listing only supported for groups and distribution_lists")
     p = await db.projects.find_one({"_id": ObjectId(project_id)})
     if not p:
@@ -558,12 +558,12 @@ async def list_item_members(service_type: str, item_id: str, project_id: str, cu
 
 
 # -----------------------------------------------------------------------------
-# Jobs Ã¢â‚¬â€ concurrent runner with 429/5xx retry-backoff and notifications
+# Jobs ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â concurrent runner with 429/5xx retry-backoff and notifications
 # -----------------------------------------------------------------------------
 async def _process_item(job_id: str, item: Dict[str, Any], service_type: str,
                         source_cfg: Dict[str, Any], dest_cfg: Dict[str, Any],
                         semaphore: asyncio.Semaphore, total: int):
-    """Handle a single item Ã¢â‚¬â€ respects pause/cancel via periodic DB check."""
+    """Handle a single item ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â respects pause/cancel via periodic DB check."""
     async with semaphore:
         # Cancel/pause gate
         while True:
@@ -598,7 +598,7 @@ async def _process_item(job_id: str, item: Dict[str, Any], service_type: str,
             {"_id": ObjectId(job_id), "items.id": item["id"]},
             {"$set": set_ops, "$inc": inc_ops},
         )
-        # Update checkpoint (project + service level) Ã¢â‚¬â€ persists across jobs
+        # Update checkpoint (project + service level) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â persists across jobs
         job_meta = await db.jobs.find_one({"_id": ObjectId(job_id)}, {"project_id": 1, "service_type": 1})
         if job_meta:
             await cp.record_item_result(
@@ -612,7 +612,7 @@ async def _process_item(job_id: str, item: Dict[str, Any], service_type: str,
             "job_id": job_id, "ts": now_iso(),
             "level": "error" if result["status"] == "failed" else "info",
             "message": (
-                f"{item['display_name']} Ã¢â‚¬â€ {result['status'].upper()} ({result['duration_ms']}ms)"
+                f"{item['display_name']} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â {result['status'].upper()} ({result['duration_ms']}ms)"
                 + (f" :: {result['error']}" if result.get("error") else "")
                 + (f" :: {result.get('stats')}" if result.get("stats") else "")
             ),
@@ -654,7 +654,7 @@ async def run_job(job_id: str):
     ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Final status Ã¢â‚¬â€ was it canceled mid-flight?
+    # Final status ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â was it canceled mid-flight?
     j = await db.jobs.find_one({"_id": ObjectId(job_id)})
     final_status = "canceled" if j and j.get("status") == "canceled" else "completed"
     await db.jobs.update_one(
@@ -707,7 +707,7 @@ async def create_job(body: JobCreate, background: BackgroundTasks, current_user:
         }
         for it in full_items if it["id"] in selected_lookup
     ]
-    # Delta / incremental filtering Ã¢â‚¬â€ respect checkpoints
+    # Delta / incremental filtering ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â respect checkpoints
     if body.mode in ("delta", "incremental"):
         # Re-annotate selected items and apply mode filter
         selected_items = [it for it in full_items if it["id"] in selected_lookup]
@@ -742,11 +742,29 @@ async def create_job(body: JobCreate, background: BackgroundTasks, current_user:
 
 
 @api_router.get("/jobs")
-async def list_jobs(project_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+async def list_jobs(
+    project_id: Optional[str] = None,
+    service_type: Optional[str] = None,
+    status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
     q = {}
     if project_id:
         q["project_id"] = project_id
-    cursor = db.jobs.find(q, {"items": 0}).sort("created_at", -1).limit(200)
+    if service_type:
+        q["service_type"] = service_type
+    if status:
+        q["status"] = status
+    if date_from or date_to:
+        date_q = {}
+        if date_from:
+            date_q["$gte"] = date_from
+        if date_to:
+            date_q["$lte"] = date_to + "T23:59:59"
+        q["created_at"] = date_q
+    cursor = db.jobs.find(q, {"items": 0}).sort("created_at", -1).limit(500)
     items = []
     async for j in cursor:
         j["id"] = str(j["_id"])
@@ -1000,14 +1018,14 @@ async def run_schedule_now(schedule_id: str, background: BackgroundTasks, curren
 
 
 # -----------------------------------------------------------------------------
-# Tenant Connections Ã¢â‚¬â€ saved reusable Azure AD credential profiles
+# Tenant Connections ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â saved reusable Azure AD credential profiles
 # -----------------------------------------------------------------------------
 def _mask_secret(secret: str) -> str:
     if not secret:
         return ""
     if len(secret) <= 6:
-        return "Ã¢â‚¬Â¢" * len(secret)
-    return secret[:2] + "Ã¢â‚¬Â¢" * (len(secret) - 6) + secret[-4:]
+        return "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢" * len(secret)
+    return secret[:2] + "ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢" * (len(secret) - 6) + secret[-4:]
 
 
 def _connection_out(doc: Dict[str, Any], reveal: bool = False) -> Dict[str, Any]:
@@ -1018,7 +1036,7 @@ def _connection_out(doc: Dict[str, Any], reveal: bool = False) -> Dict[str, Any]
     try:
         plain_secret = crypto.decrypt_secret(stored_secret) if stored_secret else ""
     except Exception:
-        plain_secret = ""  # unable to decrypt Ã¢â‚¬â€ treat as empty
+        plain_secret = ""  # unable to decrypt ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â treat as empty
     if reveal:
         doc["client_secret"] = plain_secret
     else:
