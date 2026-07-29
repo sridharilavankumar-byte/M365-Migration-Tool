@@ -4,8 +4,8 @@ import TopBar from "@/components/layout/TopBar";
 import { Panel, StatusBadge } from "@/components/shared/Primitives";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { DownloadSimple } from "@phosphor-icons/react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { DownloadSimple, MagnifyingGlass } from "@phosphor-icons/react";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 const SERVICE_TYPES = ["exchange", "sharepoint", "onedrive", "distribution_lists", "teams", "groups", "contacts", "calendars", "public_folders"];
 
@@ -16,6 +16,10 @@ export default function ReportsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  const [searchEmail, setSearchEmail] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -46,7 +50,24 @@ export default function ReportsPage() {
       service: s,
       jobs: jobs.filter((j) => j.service_type === s).length,
     })).filter((x) => x.jobs > 0);
-    return { totalJobs, totalSuccess, totalFailed, successRate, byService };
+
+    const finishedJobs = jobs
+      .filter((j) => j.finished_at)
+      .slice()
+      .sort((a, b) => new Date(a.finished_at) - new Date(b.finished_at));
+    const byDay = {};
+    finishedJobs.forEach((j) => {
+      const day = j.finished_at.slice(0, 10);
+      if (!byDay[day]) byDay[day] = { day, success: 0, failed: 0 };
+      byDay[day].success += j.success_count || 0;
+      byDay[day].failed += j.fail_count || 0;
+    });
+    const trend = Object.values(byDay).map((d) => {
+      const total = d.success + d.failed;
+      return { day: d.day.slice(5), rate: total > 0 ? Math.round((d.success / total) * 100) : 0 };
+    });
+
+    return { totalJobs, totalSuccess, totalFailed, successRate, byService, trend };
   }, [jobs]);
 
   const exportCsv = () => {
@@ -69,21 +90,67 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  const exportPdf = async () => {
+    try {
+      const params = {};
+      if (serviceFilter) params.service_type = serviceFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      const response = await api.get("/reports/export.pdf", { params, responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "migration-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to generate PDF");
+    }
+  };
+
+  const runSearch = async () => {
+    if (!searchEmail.trim()) return;
+    setSearching(true);
+    setSearchResults(null);
+    try {
+      const { data } = await api.get("/reports/user-history", { params: { email: searchEmail.trim() } });
+      setSearchResults(data);
+    } catch (err) {
+      toast.error("Search failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
   return (
     <>
       <TopBar
         title="Reports"
         subtitle="Migration history and analytics across all services"
         right={
-          <button
-            onClick={exportCsv}
-            disabled={!jobs.length}
-            data-testid="export-report-btn"
-            className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 border border-white/20 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
-          >
-            <DownloadSimple size={14} />
-            export csv
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportCsv}
+              disabled={!jobs.length}
+              data-testid="export-report-csv-btn"
+              className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 border border-white/20 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
+            >
+              <DownloadSimple size={14} />
+              export csv
+            </button>
+            <button
+              onClick={exportPdf}
+              disabled={!jobs.length}
+              data-testid="export-report-pdf-btn"
+              className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 border border-white/20 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
+            >
+              <DownloadSimple size={14} />
+              export pdf
+            </button>
+          </div>
         }
       />
       <div className="p-6 space-y-4">
@@ -106,22 +173,89 @@ export default function ReportsPage() {
           </Panel>
         </div>
 
-        {summary.byService.length > 0 && (
-          <Panel className="p-4">
-            <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 mb-3">Jobs by Service</div>
-            <div style={{ width: "100%", height: 200 }}>
-              <ResponsiveContainer>
-                <BarChart data={summary.byService}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-                  <XAxis dataKey="service" tick={{ fill: "#71717a", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "#71717a", fontSize: 10 }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.15)" }} />
-                  <Bar dataKey="jobs" fill="#00e5ff" />
-                </BarChart>
-              </ResponsiveContainer>
+        <div className="grid grid-cols-2 gap-4">
+          {summary.byService.length > 0 && (
+            <Panel className="p-4">
+              <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 mb-3">Jobs by Service</div>
+              <div style={{ width: "100%", height: 200 }}>
+                <ResponsiveContainer>
+                  <BarChart data={summary.byService}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="service" tick={{ fill: "#71717a", fontSize: 10 }} />
+                    <YAxis tick={{ fill: "#71717a", fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.15)" }} />
+                    <Bar dataKey="jobs" fill="#00e5ff" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Panel>
+          )}
+
+          {summary.trend.length > 1 && (
+            <Panel className="p-4">
+              <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 mb-3">Success Rate Over Time</div>
+              <div style={{ width: "100%", height: 200 }}>
+                <ResponsiveContainer>
+                  <LineChart data={summary.trend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="day" tick={{ fill: "#71717a", fontSize: 10 }} />
+                    <YAxis tick={{ fill: "#71717a", fontSize: 10 }} domain={[0, 100]} />
+                    <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.15)" }} />
+                    <Line type="monotone" dataKey="rate" stroke="#00ff66" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </Panel>
+          )}
+        </div>
+
+        <Panel className="p-4">
+          <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 mb-3">Search by Email or Name (across all services)</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={searchEmail}
+              onChange={(e) => setSearchEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              placeholder="test.user@maxisit.com"
+              data-testid="user-history-input"
+              className="flex-1 bg-[#050505] border border-white/10 px-3 py-2 text-sm font-mono focus:border-[#00e5ff] focus:outline-none"
+            />
+            <button
+              onClick={runSearch}
+              disabled={searching || !searchEmail.trim()}
+              data-testid="user-history-search-btn"
+              className="text-xs font-mono uppercase tracking-[0.1em] px-4 py-2 bg-[#00e5ff] hover:bg-[#00b3cc] text-black flex items-center gap-2 disabled:opacity-40"
+            >
+              <MagnifyingGlass size={14} />
+              {searching ? "searching..." : "search"}
+            </button>
+          </div>
+
+          {searchResults && (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="text-xs font-mono text-zinc-500 mb-2">{searchResults.total} match(es) for "{searchResults.query}"</div>
+              {searchResults.total === 0 ? (
+                <div className="text-xs font-mono text-zinc-500 py-4 text-center">no migration history found for this person</div>
+              ) : (
+                <div className="space-y-2">
+                  {searchResults.matches.map((m, idx) => (
+                    <div key={idx} className="text-xs font-mono border-b border-white/5 pb-2 flex items-center justify-between">
+                      <div>
+                        <span className="text-white">{m.item_display_name}</span>
+                        <span className="text-zinc-500"> - {m.service_type} - {m.project_name}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <StatusBadge status={m.item_status} />
+                        <Link to={`/app/jobs/${m.job_id}`} className="text-[#00e5ff] hover:underline">view job -&gt;</Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </Panel>
-        )}
+          )}
+        </Panel>
 
         <Panel className="p-4">
           <div className="flex items-center gap-3 flex-wrap">
