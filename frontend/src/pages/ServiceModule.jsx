@@ -122,11 +122,23 @@ export default function ServiceModule() {
   const [concurrency, setConcurrency] = useState(3);
   const [runMode, setRunMode] = useState(null);  // "live" | "simulated"
   const [checkpoint, setCheckpoint] = useState(null);
+  const [memberModal, setMemberModal] = useState(null);
   const [hideSynced, setHideSynced] = useState(false);
   const nav = useNavigate();
 
   const requestIdRef = useRef(0);
   useEffect(() => { requestIdRef.current += 1; setItems([]); setSelected(new Set()); setRunMode(null); setCheckpoint(null); }, [serviceType, current?.id]);
+
+  const openMembers = async (itemId, itemName) => {
+    if (!current) return;
+    setMemberModal({ itemId, itemName, members: [], loading: true });
+    try {
+      const { data } = await api.get(`/services/${serviceType}/${itemId}/members`, { params: { project_id: current.id } });
+      setMemberModal({ itemId, itemName, members: data.members, loading: false });
+    } catch (err) {
+      setMemberModal({ itemId, itemName, members: [], loading: false, error: true });
+    }
+  };
 
   const loadCheckpoint = async () => {
     if (!current) return;
@@ -399,7 +411,18 @@ export default function ServiceModule() {
                     </td>
                     {cfg.columns.map((c) => (
                       <td key={c.key} className={`px-4 py-2.5 ${c.mono ? "font-mono text-xs" : "text-sm"} ${c.right ? "text-right" : "text-left"} text-zinc-200`}>
-                        {c.format ? c.format(it[c.key]) : it[c.key]}
+                        {c.key === "member_count" && (serviceType === "groups" || serviceType === "distribution_lists") ? (
+                          <button
+                            type="button"
+                            onClick={() => openMembers(it.id, it.display_name)}
+                            data-testid={`view-members-${it.id}`}
+                            className="underline decoration-dotted hover:text-[#00e5ff]"
+                          >
+                            {it[c.key]}
+                          </button>
+                        ) : (
+                          c.format ? c.format(it[c.key]) : it[c.key]
+                        )}
                       </td>
                     ))}
                     <td className="px-4 py-2.5">
@@ -420,6 +443,33 @@ export default function ServiceModule() {
           </div>
         </Panel>
       </div>
+
+      {memberModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={() => setMemberModal(null)}>
+          <div className="bg-[#0a0a0a] border border-white/10 max-w-lg w-full max-h-[70vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+              <div className="text-sm font-mono text-white">{memberModal.itemName} - Members</div>
+              <button type="button" onClick={() => setMemberModal(null)} className="text-zinc-500 hover:text-white text-xs">close</button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-2">
+              {memberModal.loading ? (
+                <div className="text-xs text-zinc-500 font-mono">loading...</div>
+              ) : memberModal.error ? (
+                <div className="text-xs text-[#ff3b30] font-mono">failed to load members</div>
+              ) : memberModal.members.length === 0 ? (
+                <div className="text-xs text-zinc-500 font-mono">no members found</div>
+              ) : (
+                memberModal.members.map((m) => (
+                  <div key={m.id} className="text-xs font-mono text-zinc-200 border-b border-white/5 pb-2">
+                    <div className="text-white">{m.display_name}</div>
+                    <div className="text-zinc-500">{m.email}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
